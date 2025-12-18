@@ -1,0 +1,1146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>神庙探险 v6.0</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        :root {
+            --bg-color: #1a120b;
+            --panel-bg: #2d2018;
+            --accent-gold: #ffb300;
+            --accent-green: #66bb6a;
+            --accent-orange: #ffa726;
+            --accent-red: #ef5350;
+            --text-light: #ece0d1;
+            --border-color: #5d4037;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            background-image: radial-gradient(circle at center, #2c2018 0%, #1a120b 100%);
+            color: var(--text-light);
+            margin: 0; padding: 0;
+            display: flex; flex-direction: column;
+            height: 100vh; overflow: hidden;
+            -webkit-user-select: none; user-select: none;
+            font-size: 14px; /* 基础字体调大 */
+        }
+
+        /* --- Main Menu --- */
+        #main-menu {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 300;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        .menu-btn {
+            width: 250px; padding: 15px; margin: 10px;
+            font-size: 20px; font-weight: bold; cursor: pointer;
+            border: 2px solid var(--accent-gold); border-radius: 8px;
+            background: #2d2018; color: var(--accent-gold);
+            transition: all 0.2s;
+        }
+        .menu-btn:hover { background: var(--accent-gold); color: #000; }
+        .menu-input {
+            width: 240px; padding: 12px; margin: 10px; font-size: 16px;
+            background: #1a120b; border: 1px solid #555; color: #fff; border-radius: 4px;
+        }
+        
+        /* --- Lobby --- */
+        #lobby-screen {
+            position: fixed; inset: 0; background: #1a120b; z-index: 290;
+            display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+            padding-top: 50px;
+        }
+        .lobby-player {
+            width: 300px; padding: 10px; margin: 5px;
+            background: #2d2018; border: 1px solid #444; border-radius: 4px;
+            display: flex; justify-content: space-between;
+        }
+
+        /* --- UI: Top Bar --- */
+        #top-bar {
+            padding: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            z-index: 10;
+            position: relative;
+        }
+
+        /* --- 灾难监控中心 (左上角) --- */
+        .monitor-wrapper { perspective: 1000px; }
+        #stage-monitor {
+            background: linear-gradient(180deg, #3e2723, #251812);
+            border: 2px solid var(--border-color);
+            border-left: 6px solid var(--accent-gold);
+            border-radius: 8px;
+            padding: 10px 14px; /* 增加内边距 */
+            width: 160px; /* 稍微加宽 */
+            box-shadow: 0 4px 10px rgba(0,0,0,0.6);
+            transition: transform 0.6s;
+            transform-style: preserve-3d;
+            backface-visibility: hidden;
+        }
+        #stage-monitor.flipping { transform: rotateX(360deg); }
+
+        .monitor-header { font-size: 12px; color: #aaa; letter-spacing: 1px; margin-bottom: 4px; font-weight: bold; }
+        .stage-title { font-size: 18px; font-weight: bold; color: var(--accent-gold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px;}
+        .stage-desc { font-size: 12px; color: #ccc; margin-bottom: 8px; font-style: italic; min-height: 16px; line-height: 1.2; }
+
+        .trap-meter { display: flex; height: 8px; background: #444; border-radius: 4px; overflow: hidden; margin-bottom: 6px; }
+        .trap-seg { flex: 1; border-right: 1px solid #222; background: #333; transition: all 0.3s; }
+        .trap-seg.active.lvl1 { background: var(--accent-green); box-shadow: 0 0 5px var(--accent-green); }
+        .trap-seg.active.lvl2 { background: var(--accent-orange); box-shadow: 0 0 5px var(--accent-orange); }
+        .trap-seg.active.lvl3 { background: var(--accent-red); box-shadow: 0 0 8px var(--accent-red); }
+
+        .monitor-footer { display: flex; justify-content: space-between; font-size: 13px; font-weight: bold; }
+        .monitor-status { color: var(--accent-green); transition: color 0.3s; }
+
+        /* Round Badge */
+        .round-badge {
+            background: rgba(0,0,0,0.6);
+            padding: 8px 16px;
+            border-radius: 20px;
+            border: 1px solid #555;
+            font-size: 16px; /* 字体加大 */
+            color: #ccc;
+        }
+        .round-badge span { color: #fff; font-weight: bold; font-size: 20px; }
+
+        /* --- Log Sidebar Toggle --- */
+        #log-toggle {
+            position: fixed; top: 90px; right: 0;
+            background: var(--panel-bg);
+            border: 1px solid var(--accent-gold);
+            border-right: none;
+            padding: 10px 14px;
+            border-radius: 20px 0 0 20px;
+            font-size: 24px; cursor: pointer;
+            z-index: 50;
+            box-shadow: -2px 2px 10px rgba(0,0,0,0.5);
+        }
+
+        /* --- Main Stage --- */
+        #main-stage {
+            flex: 1;
+            display: flex; justify-content: center; align-items: flex-end;
+            padding: 10px 5px 100px 5px; gap: 6px; position: relative;
+        }
+
+        #center-deck {
+            position: absolute; top: 15%; left: 50%; transform: translateX(-50%);
+            width: 80px; height: 110px;
+            background: linear-gradient(135deg, #5d4037, #3e2723);
+            border: 3px solid #8d6e63; border-radius: 8px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.6); z-index: 0;
+            display: flex; justify-content: center; align-items: center; font-size: 40px; opacity: 0.9;
+        }
+        @keyframes shuffle { 
+            0%, 100% { transform:translateX(-50%) rotate(0deg); } 
+            25% { transform:translateX(-52%) rotate(-3deg); } 
+            75% { transform:translateX(-48%) rotate(3deg); } 
+        }
+        .shuffling { animation: shuffle 0.3s infinite; }
+
+        /* --- Players --- */
+        .player-unit {
+            display: flex; flex-direction: column; align-items: center;
+            width: 24%; max-width: 100px; position: relative; z-index: 2;
+        }
+
+        .status-panel {
+            background: var(--panel-bg); border: 2px solid var(--border-color);
+            border-radius: 10px; padding: 6px; width: 100%;
+            margin-bottom: 8px; text-align: center; position: relative;
+            transition: all 0.3s;
+        }
+        .status-panel.active { border-color: var(--accent-gold); box-shadow: 0 0 15px rgba(255,179,0,0.3); }
+        .status-panel.busted { border-color: var(--accent-red); background: #2c1010; }
+        .status-panel.retreated { border-color: var(--accent-green); opacity: 0.8; }
+
+        .p-score { font-size: 26px; font-weight: bold; color: #fff; margin: 4px 0; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+        .p-name { font-size: 13px; font-weight: bold; color: #ccc; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+        
+        /* Tags */
+        .p-tags { min-height: 20px; display: flex; justify-content: center; flex-wrap: wrap; gap: 4px; }
+        .tag { font-size: 11px; padding: 2px 6px; border-radius: 4px; cursor: pointer; color:#000; font-weight:bold; }
+        .tag.trap { background: var(--accent-red); color: white; }
+        .tag.buff { background: var(--accent-gold); }
+        .tag.info { background: #90caf9; }
+
+        /* Avatars */
+        .avatar {
+            width: 60px; height: 60px; border-radius: 50%;
+            border: 3px solid #555; background-color: #333;
+            background-size: cover; background-position: center;
+            margin-bottom: -20px; position: relative; z-index: 2;
+            transition: transform 0.2s;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+        }
+        .avatar.p1 { border-color: var(--accent-green); background-image: url('https://api.dicebear.com/9.x/adventurer/svg?seed=Felix'); }
+        .avatar.p2 { border-color: var(--accent-gold); background-image: url('https://api.dicebear.com/9.x/adventurer/svg?seed=Annie'); }
+        .avatar.p3 { border-color: #42a5f5; background-image: url('https://api.dicebear.com/9.x/adventurer/svg?seed=Bob'); }
+        .avatar.p4 { border-color: #ab47bc; background-image: url('https://api.dicebear.com/9.x/adventurer/svg?seed=Coco'); }
+
+        .status-icon {
+            position: absolute; top: -12px; right: -8px; font-size: 24px;
+            filter: drop-shadow(0 2px 2px rgba(0,0,0,0.8));
+        }
+
+        /* Hand (Table Cards) */
+        .hand-area { position: relative; width: 100%; height: 60px; margin-top: 25px; }
+        .mini-card {
+            position: absolute; width: 40px; height: 56px;
+            background: #eee; border: 1px solid #333; border-radius: 5px;
+            left: 50%; transform: translateX(-50%);
+            display: flex; justify-content: center; align-items: center;
+            font-weight: bold; color: #333; font-size: 18px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+        }
+        .mini-card.trap { background: #ffcdd2; color: #c62828; border-color: #c62828; }
+        .mini-card.back { background: repeating-linear-gradient(45deg, #3e2723, #3e2723 5px, #4e342e 5px, #4e342e 10px); color: transparent; }
+
+        /* --- Controls --- */
+        #controls {
+            background: rgba(0,0,0,0.9); padding: 15px;
+            display: flex; gap: 20px; justify-content: center;
+            border-top: 1px solid #444; backdrop-filter: blur(8px);
+        }
+        .btn {
+            flex: 1; max-width: 200px; padding: 16px; border: none; border-radius: 10px;
+            font-size: 18px; font-weight: bold; color: white; cursor: pointer;
+            box-shadow: 0 4px 0 rgba(255,255,255,0.1); transition: transform 0.1s;
+        }
+        .btn:active { transform: translateY(3px); box-shadow: none; }
+        .btn:disabled { filter: grayscale(1); opacity: 0.5; cursor: not-allowed; }
+        .btn-draw { background: linear-gradient(to bottom, #43a047, #2e7d32); }
+        .btn-retreat { background: linear-gradient(to bottom, #e53935, #c62828); }
+
+        /* --- Log Drawer --- */
+        #log-drawer {
+            position: fixed; top: 0; right: -350px; width: 320px; height: 100%;
+            background: #251d1a; border-left: 3px solid var(--accent-gold);
+            z-index: 100; transition: right 0.3s ease;
+            display: flex; flex-direction: column;
+            box-shadow: -5px 0 20px rgba(0,0,0,0.7);
+        }
+        #log-drawer.open { right: 0; }
+        .drawer-header { padding: 18px; background: #1a120b; color: var(--accent-gold); font-size: 18px; font-weight: bold; border-bottom: 1px solid #444; display: flex; justify-content: space-between; align-items: center; }
+        .log-content { flex: 1; overflow-y: auto; padding: 15px; font-family: 'Consolas', monospace; font-size: 14px; color: #ccc; line-height: 1.5; }
+        .log-line { margin-bottom: 8px; border-bottom: 1px dashed #444; padding-bottom: 6px; }
+        .log-time { color: #888; font-size: 12px; margin-right: 8px; }
+
+        /* --- Tooltip --- */
+        #tooltip {
+            position: fixed; background: rgba(0,0,0,0.95); color: #fff;
+            padding: 10px 14px; border: 1px solid var(--accent-gold); border-radius: 6px;
+            font-size: 14px; pointer-events: none; opacity: 0; z-index: 200;
+            max-width: 220px; transition: opacity 0.2s; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+
+        /* --- Flying Card --- */
+        .fly-card {
+            position: fixed; width: 100px; height: 140px; /* 卡片更大 */
+            background: #fff8e1; border: 4px solid #333; border-radius: 8px;
+            z-index: 9999; display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            box-shadow: 0 15px 40px rgba(0,0,0,0.6); pointer-events: none;
+            /* 关键：使用 transition 配合 JS 触发 */
+            transition: all 0.6s cubic-bezier(0.25, 0.8, 0.25, 1);
+            opacity: 0;
+            transform: scale(0.5);
+        }
+        .fly-card.trap { background: #ffebee; border-color: var(--accent-red); }
+        .fly-card.back { background: repeating-linear-gradient(45deg, #3e2723, #3e2723 10px, #5d4037 10px, #5d4037 20px); border-color: #2c1e12; }
+        .fly-card.back * { display: none; }
+
+        /* --- Toast --- */
+        #toast-container { position: fixed; bottom: 120px; left: 0; right: 0; text-align: center; pointer-events: none; z-index: 999; }
+        .toast { display: inline-block; background: rgba(0,0,0,0.85); color: #fff; padding: 10px 20px; border-radius: 30px; margin-top: 8px; font-size: 16px; animation: fadeUp 2s forwards; border: 1px solid #555; }
+        @keyframes fadeUp { 0% { opacity:0; transform:translateY(15px); } 10% { opacity:1; transform:translateY(0); } 80% { opacity:1; } 100% { opacity:0; } }
+
+        /* --- Overlay --- */
+        #overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .hidden { display: none !important; }
+        
+        /* Rank Table */
+        table { width: 90%; max-width: 450px; border-collapse: collapse; margin: 25px 0; border: 2px solid #555; background: #251d1a; font-size: 16px; }
+        th { background: var(--accent-gold); color: #000; padding: 12px; font-size: 18px; }
+        td { padding: 12px; border-bottom: 1px solid #444; text-align: center; color: #ddd; }
+    </style>
+</head>
+<body>
+
+    <div id="main-menu">
+        <h1 style="color:var(--accent-gold); font-size:48px; margin-bottom:40px;">印加神庙</h1>
+        <div id="menu-initial">
+            <button class="menu-btn" onclick="startSinglePlayer()">单人挑战</button>
+            <button class="menu-btn" onclick="showMultiplayer()">多人联机</button>
+        </div>
+        <div id="menu-multi" class="hidden" style="text-align:center;">
+            <input type="text" id="p-name" class="menu-input" placeholder="输入你的名字" maxlength="8">
+            <br>
+            <button class="menu-btn" onclick="createRoom()">创建房间</button>
+            <div style="margin:10px; color:#666;">- 或 -</div>
+            <input type="text" id="room-id-input" class="menu-input" placeholder="输入房间号" style="width:140px; margin-right:5px;">
+            <button class="menu-btn" style="width:80px;" onclick="joinRoom()">加入</button>
+            <br><br>
+            <button class="menu-btn" style="border-color:#555; color:#888;" onclick="backToMain()">返回</button>
+        </div>
+    </div>
+
+    <div id="lobby-screen" class="hidden">
+        <h2 style="color:var(--accent-gold)">等待大厅</h2>
+        <div style="font-size:20px; margin-bottom:20px;">房间号: <span id="lobby-room-id" style="color:#fff; font-weight:bold;">...</span></div>
+        <div id="lobby-list">
+            <!-- Players -->
+        </div>
+        <div style="margin-top:50px;">
+            <button id="btn-start-mp" class="menu-btn hidden" onclick="startMPGame()">开始游戏</button>
+            <div id="wait-msg" style="color:#888;">等待房主开始...</div>
+        </div>
+    </div>
+
+    <div id="tooltip"></div>
+
+    <div id="log-toggle" onclick="toggleLog()">📜</div>
+    <div id="log-drawer">
+        <div class="drawer-header">
+            <span>探险日志</span>
+            <span onclick="toggleLog()" style="cursor:pointer; font-size:24px;">×</span>
+        </div>
+        <div class="log-content" id="log-list"></div>
+    </div>
+
+    <div id="top-bar">
+        <div class="monitor-wrapper">
+            <div id="stage-monitor">
+                <div class="monitor-header">公共环境牌</div>
+                <div class="stage-title" id="stage-title">...</div>
+                <div class="stage-desc" id="stage-desc">等待翻牌...</div>
+                
+                <div class="trap-meter">
+                    <div class="trap-seg" id="seg-1"></div>
+                    <div class="trap-seg" id="seg-2"></div>
+                    <div class="trap-seg" id="seg-3"></div>
+                </div>
+                <div class="monitor-footer">
+                    <span>危险度</span>
+                    <span id="monitor-status" class="monitor-status">安全</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="round-badge">
+            ROUND <span id="round-num">1</span>
+        </div>
+    </div>
+
+    <div id="main-stage">
+        <div id="center-deck">🗿</div>
+        <div id="players-container" style="display:flex; width:100%; justify-content:space-around; z-index:1;">
+            </div>
+    </div>
+
+    <div id="controls">
+        <button id="btn-draw" class="btn btn-draw" onclick="playerDecision(true)">继续探索</button>
+        <button id="btn-retreat" class="btn btn-retreat" onclick="playerDecision(false)">带着宝藏撤退</button>
+    </div>
+
+    <div id="toast-container"></div>
+
+    <div id="overlay">
+        <div style="text-align:center; padding:20px;">
+            <h1 style="color:var(--accent-gold); font-size:36px; margin-bottom:10px;">印加神庙 V6.0</h1>
+            <p style="color:#ccc; font-size:16px; max-width:320px; margin:0 auto 30px auto; line-height:1.6;">
+                1. 4人共享牌堆，每轮重置<br>
+                2. 每轮翻开一张环境效果牌<br>
+                3. 陷阱触发3次即神庙崩塌<br>
+                4. 请注意观察AI的行动
+            </p>
+            <button class="btn btn-draw" onclick="startGame()" style="width:200px; font-size:20px;">开始游戏</button>
+        </div>
+    </div>
+
+<script>
+    /* --- 配置 --- */
+    const CONFIG = {
+        maxScore: 21,
+        maxRounds: 5,
+        maxTraps: 3,
+        deck: { total: 60, traps: 6, blessings: 6, treasures: 48 }, // 10% Trap
+        traps: {
+            'Poison': { name: '毒箭', desc: '点数+3', color: '#ef5350' },
+            'Landslide': { name: '塌方', desc: '下张牌翻倍', color: '#8d6e63' },
+            'Curse': { name: '诅咒', desc: '撤退时点数+2', color: '#7e57c2' },
+            'Lost': { name: '迷失', desc: '必须再抽一次牌', color: '#78909c' },
+            'Wrath': { name: '神怒', desc: '所有人点数+2', color: '#ff7043' }
+        },
+        // 公共牌池
+        stageEffects: [
+            { id: 'calm', name: '风平浪静', desc: '本轮无特殊效果', type: 'neutral' },
+            { id: 'harvest', name: '丰收之年', desc: '撤退倍率 +0.5 (全员生效)', type: 'good' },
+            { id: 'blessing', name: '神庙祝福', desc: '所有人初始点数 +1', type: 'good' },
+            { id: 'greed', name: '贪婪诅咒', desc: '撤退时若点数<10，收益减半', type: 'bad' },
+            { id: 'fragile', name: '结构松动', desc: '陷阱造成的点数伤害 +1', type: 'bad' },
+            { id: 'mud', name: '泥泞沼泽', desc: '撤退必须支付 2点 宝藏分(扣分)', type: 'bad' },
+            { id: 'rush', name: '狂热', desc: '抽到5点以上宝藏额外+1分', type: 'neutral' },
+            { id: 'unity', name: '命运共同体', desc: '若本轮无人爆仓，全员额外+5分', type: 'good' }
+        ]
+    };
+
+    let gameState = {
+        round: 0,
+        deck: [],
+        players: [],
+        stageTraps: 0,
+        currentStageEffect: null,
+        isProcessing: false
+    };
+
+    /* --- Multiplayer State --- */
+    let socket = null;
+    let isMultiplayer = false;
+    let myPIndex = 1; // 1-4
+    let myRoomId = null;
+    let isHost = false;
+
+    class Player {
+        constructor(id, isHuman, name=null) {
+            this.id = id;
+            this.isHuman = isHuman; // Is controlled by a human (local or remote)
+            this.name = name || (isHuman ? "我" : `AI-${id}`);
+            this.totalScore = 0;
+            this.resetRound();
+        }
+        resetRound() {
+            this.currentScore = 0;
+            this.status = 'active'; 
+            this.hand = [];
+            this.effects = { multiplier: 1, curseVal: 0, forcedDraws: 0 };
+            this.aceCount = 0;
+        }
+        getName() { return this.name; }
+    }
+
+    /* --- 初始化 --- */
+    function startSinglePlayer() {
+        isMultiplayer = false;
+        isHost = true;
+        myPIndex = 1;
+        document.getElementById('main-menu').classList.add('hidden');
+        // Let the user see the original overlay (Rules) and click Start there
+    }
+
+    function showMultiplayer() {
+        document.getElementById('menu-initial').classList.add('hidden');
+        document.getElementById('menu-multi').classList.remove('hidden');
+        if(!socket) initSocket();
+    }
+
+    function backToMain() {
+        document.getElementById('menu-initial').classList.remove('hidden');
+        document.getElementById('menu-multi').classList.add('hidden');
+    }
+
+    function initSocket() {
+        socket = io();
+        
+        socket.on('room_created', (data) => {
+            myRoomId = data.roomId;
+            isHost = true;
+            myPIndex = 1;
+            enterLobby(data.players);
+        });
+
+        socket.on('joined_room', (data) => {
+            myRoomId = data.roomId;
+            isHost = false;
+            myPIndex = data.myIndex;
+            enterLobby(data.players);
+        });
+
+        socket.on('player_joined', (players) => {
+            updateLobby(players);
+        });
+
+        socket.on('error_msg', (msg) => showToast(msg, 'warn'));
+
+        socket.on('game_started', (players) => {
+            document.getElementById('lobby-screen').classList.add('hidden');
+            // Setup Players based on Room Data
+            gameState.players = [];
+            for(let i=1; i<=4; i++) {
+                const pData = players.find(p => p.pIndex === i);
+                if(pData) {
+                    gameState.players.push(new Player(i, true, pData.name));
+                } else {
+                    gameState.players.push(new Player(i, false)); // Fill with AI
+                }
+            }
+            startGame(true);
+        });
+
+        // Game Sync Events
+        socket.on('game_event', (evt) => {
+            handleGameEvent(evt);
+        });
+
+        socket.on('remote_decision', (data) => {
+            if(!isHost) return;
+            // Host receives decision from Client
+            handleRemoteDecision(data.pIndex, data.choice);
+        });
+    }
+
+    function createRoom() {
+        const name = document.getElementById('p-name').value || "探险家";
+        socket.emit('create_room', name);
+    }
+
+    function joinRoom() {
+        const name = document.getElementById('p-name').value || "探险家";
+        const rid = document.getElementById('room-id-input').value.trim().toUpperCase();
+        if(!rid) return showToast("请输入房间号", 'warn');
+        socket.emit('join_room', { roomId: rid, playerName: name });
+    }
+
+    function enterLobby(players) {
+        document.getElementById('main-menu').classList.add('hidden');
+        document.getElementById('lobby-screen').classList.remove('hidden');
+        document.getElementById('lobby-room-id').innerText = myRoomId;
+        updateLobby(players);
+    }
+
+    function updateLobby(players) {
+        const list = document.getElementById('lobby-list');
+        list.innerHTML = '';
+        players.forEach(p => {
+            const div = document.createElement('div');
+            div.className = 'lobby-player';
+            div.innerHTML = `<span>P${p.pIndex} ${p.name}</span> <span>${p.isHost?'(房主)':''} ${p.pIndex===myPIndex?'(我)':''}</span>`;
+            list.appendChild(div);
+        });
+        
+        if(isHost) {
+            document.getElementById('btn-start-mp').classList.remove('hidden');
+            document.getElementById('wait-msg').classList.add('hidden');
+        }
+    }
+
+    function startMPGame() {
+        socket.emit('start_game', myRoomId);
+    }
+
+    function startGame(isMP = false) {
+        document.getElementById('overlay').classList.add('hidden');
+        if(!isMP) {
+             // Single Player Setup
+             if(gameState.round === 0) {
+                gameState.players = [new Player(1, true), new Player(2, false), new Player(3, false), new Player(4, false)];
+                log("=== 游戏开始 ===");
+            }
+        } else {
+            // Multiplayer Setup handled in socket event
+            isMultiplayer = true;
+            log("=== 联机游戏开始 ===");
+        }
+        
+        if(isHost) {
+            startRound();
+        } else {
+            // Clients wait for Sync
+            log("等待房主开始回合...");
+        }
+    }
+
+    /* --- 回合流程 --- */
+    async function startRound() {
+        if(isMultiplayer && !isHost) return;
+
+        gameState.round++;
+        if(gameState.round > CONFIG.maxRounds) return endGame();
+
+        gameState.stageTraps = 0;
+        gameState.isProcessing = true;
+        gameState.players.forEach(p => p.resetRound());
+        
+        // 1. 公共牌
+        const effectIdx = Math.floor(Math.random() * CONFIG.stageEffects.length);
+        gameState.currentStageEffect = CONFIG.stageEffects[effectIdx];
+        
+        if(isMultiplayer) {
+            broadcast('round_start', { round: gameState.round, effectIdx: effectIdx });
+        }
+
+        performRoundStart();
+
+        // 2. 洗牌
+        document.getElementById('center-deck').classList.add('shuffling');
+        await wait(1000);
+        document.getElementById('center-deck').classList.remove('shuffling');
+        generateDeck();
+
+        gameState.isProcessing = false;
+        dealRound(); 
+    }
+
+    function performRoundStart() {
+        updateTrapMonitor(); 
+        log(`ROUND ${gameState.round}: 公共效果 [${gameState.currentStageEffect.name}]`);
+        
+        const monitor = document.getElementById('stage-monitor');
+        monitor.classList.add('flipping');
+        setTimeout(() => monitor.classList.remove('flipping'), 600);
+        showToast(`第${gameState.round}轮: ${gameState.currentStageEffect.name}`);
+
+        if(gameState.currentStageEffect.id === 'blessing') {
+            gameState.players.forEach(p => p.currentScore += 1);
+        }
+
+        updateUI();
+    }
+
+    function generateDeck() {
+        let d = [];
+        const tKeys = Object.keys(CONFIG.traps);
+        for(let i=0; i<CONFIG.deck.traps; i++) d.push({type:'trap', code:tKeys[i%tKeys.length], value:0});
+        for(let i=0; i<CONFIG.deck.blessings; i++) d.push({type:'blessing', value:0});
+        for(let i=0; i<30; i++) d.push({type:'treasure', value:Math.floor(Math.random()*4)+1});
+        for(let i=0; i<13; i++) d.push({type:'treasure', value:Math.floor(Math.random()*3)+5});
+        for(let i=0; i<5; i++) d.push({type:'treasure', value:Math.floor(Math.random()*3)+8});
+        for(let i=d.length-1; i>0; i--) { const j=Math.floor(Math.random()*(i+1)); [d[i],d[j]]=[d[j],d[i]]; }
+        gameState.deck = d;
+    }
+
+    async function dealRound() {
+        if(isMultiplayer && !isHost) return;
+
+        if(checkEnd()) return roundOver();
+        
+        setControls(false);
+        gameState.isProcessing = true;
+        
+        const active = gameState.players.filter(p => p.status === 'active');
+        
+        for(let p of active) {
+            if(gameState.deck.length === 0) break;
+            const card = gameState.deck.pop();
+            
+            if(isMultiplayer) broadcast('deal_card', { pIndex: p.id, card: card });
+
+            // 修复后的发牌动画
+            await flyCard(p, card);
+            
+            applyCard(p, card);
+            renderCards(p);
+            updateUI();
+            
+            if(p.status === 'busted') {
+                showToast(`${p.getName()} 爆仓!`, 'warn');
+                await wait(600);
+            }
+        }
+
+        if(checkEnd()) {
+            roundOver();
+        } else {
+            gameState.isProcessing = false;
+            
+            if(isMultiplayer) {
+                broadcast('ask_decision');
+                // Host also decides
+                const hostP = gameState.players.find(p => p.id === 1);
+                if(hostP && hostP.status === 'active') {
+                    setControls(true);
+                } else {
+                    // If Host is not active, check if we need to wait for others
+                    checkAllDecisions();
+                }
+            } else {
+                if(gameState.players[0].status === 'active') {
+                    setControls(true);
+                } else {
+                    setTimeout(aiTurn, 800);
+                }
+            }
+        }
+    }
+
+    function applyCard(p, card) {
+        p.hand.push(card);
+        let val = card.value;
+
+        if(gameState.currentStageEffect.id === 'rush' && card.type === 'treasure' && val >= 5) val += 1;
+        if(p.effects.multiplier > 1 && card.type !== 'trap') { val *= p.effects.multiplier; p.effects.multiplier = 1; }
+
+        if(card.type === 'trap') {
+            gameState.stageTraps++;
+            updateTrapMonitor();
+            log(`${p.getName()} 遭遇陷阱: ${CONFIG.traps[card.code].name}`);
+            
+            let dmgMod = (gameState.currentStageEffect.id === 'fragile') ? 1 : 0;
+            const code = card.code;
+            if(code === 'Poison') p.currentScore += (3 + dmgMod);
+            if(code === 'Landslide') p.effects.multiplier = 2;
+            if(code === 'Curse') p.effects.curseVal += 2;
+            if(code === 'Lost') p.effects.forcedDraws = 1;
+            if(code === 'Wrath') gameState.players.forEach(pl => { if(pl.status==='active') pl.currentScore += (2 + dmgMod); });
+        } else if (card.type === 'blessing') {
+            p.aceCount++;
+            p.currentScore += 11;
+        } else {
+            p.currentScore += val;
+        }
+
+        while(p.currentScore > CONFIG.maxScore && p.aceCount > 0) { p.currentScore -= 10; p.aceCount--; }
+
+        if(p.currentScore > CONFIG.maxScore) {
+            p.status = 'busted';
+            log(`${p.getName()} 爆仓 (${p.currentScore})`);
+        }
+        
+        if(p.effects.forcedDraws > 0) p.effects.forcedDraws--;
+    }
+
+    function playerDecision(draw) {
+        if(gameState.isProcessing) return;
+        
+        const p = gameState.players[myPIndex-1];
+        
+        if(!draw && p.effects.forcedDraws > 0) {
+            return showToast('迷失状态: 必须再探索一次!', 'warn');
+        }
+
+        if(isMultiplayer) {
+            setControls(false);
+            socket.emit('player_decision', { roomId: myRoomId, pIndex: myPIndex, choice: draw });
+            showToast("已决策，等待他人...", "info");
+            
+            // Host handles own decision locally as well
+            if(isHost) handleRemoteDecision(myPIndex, draw);
+            return;
+        }
+
+        // Single Player
+        const p1 = gameState.players[0];
+        if(!draw) {
+            p1.status = 'retreat_intent';
+            log("我选择撤退...");
+        } else {
+            log("我选择继续探索");
+        }
+        
+        setControls(false);
+        resolveTurn();
+    }
+
+    async function aiTurn() { resolveTurn(); }
+
+    async function resolveTurn() {
+        // AI Decisions (Host handles all AIs)
+        if(!isMultiplayer || isHost) {
+            gameState.players.forEach(ai => {
+                if(ai.isHuman || ai.status !== 'active') return;
+                if(ai.effects.forcedDraws > 0) return; 
+
+                let threshold = 16 - (gameState.stageTraps * 2);
+                if(gameState.currentStageEffect.id === 'mud') threshold += 2;
+                if(ai.currentScore >= threshold) ai.status = 'retreat_intent';
+            });
+        }
+
+        const retreaters = gameState.players.filter(p => p.status === 'retreat_intent');
+        
+        // Host broadcasts resolution
+        if(isMultiplayer && isHost) {
+            const rData = retreaters.map(p => p.id);
+            broadcast('turn_resolved', rData);
+        }
+
+        await processRetreats(retreaters);
+
+        if(isMultiplayer && !isHost) return; // Clients stop here, waiting for next deal
+        dealRound();
+    }
+    
+    async function processRetreats(retreaters) {
+        if(retreaters.length > 0) {
+            await wait(600);
+            
+            let mult = 1;
+            if(gameState.currentStageEffect.id === 'harvest') mult += 0.5;
+            if(retreaters.length === 1) mult += 0.5;
+            else if(retreaters.length > 1) mult = Math.max(1, mult - ((retreaters.length-1)*0.2));
+
+            for(let p of retreaters) {
+                if(p.effects.curseVal > 0) p.currentScore += p.effects.curseVal;
+                
+                let gain = Math.floor(p.currentScore * mult);
+                let logDetails = [`点数:${p.currentScore}`, `倍率:${mult.toFixed(1)}`];
+
+                if(gameState.currentStageEffect.id === 'greed' && p.currentScore < 10) {
+                    gain = Math.floor(gain / 2);
+                    logDetails.push("贪婪减半");
+                }
+                if(gameState.currentStageEffect.id === 'mud') {
+                    gain = Math.max(0, gain - 2);
+                    logDetails.push("泥泞-2");
+                }
+
+                if(p.currentScore > CONFIG.maxScore) {
+                    p.status = 'busted';
+                    showToast(`${p.getName()} 撤退失败(爆仓)`);
+                } else {
+                    p.status = 'retreated';
+                    p.totalScore += gain;
+                    const detailStr = logDetails.join(', ');
+                    log(`${p.getName()} 撤退: +${gain}分 [${detailStr}]`);
+                    if(p.isHuman) showToast(`${p.getName()} 撤退成功! +${gain}`, 'good');
+                }
+            }
+            updateUI();
+        }
+    }
+
+    // Client helper for turn resolution
+    function applyTurnResolution(retreaterIds) {
+        // Sync retreat intents
+        gameState.players.forEach(p => {
+            if(retreaterIds.includes(p.id)) p.status = 'retreat_intent';
+        });
+        const retreaters = gameState.players.filter(p => p.status === 'retreat_intent');
+        processRetreats(retreaters);
+    }
+
+    function checkEnd() {
+        if(gameState.stageTraps >= 3) return true;
+        if(!gameState.players.some(p => p.status === 'active')) return true;
+        return false;
+    }
+
+    function roundOver() {
+        const boom = gameState.stageTraps >= 3;
+        
+        if(isMultiplayer && isHost) broadcast('round_over', { boom });
+
+        performRoundOver(boom);
+    }
+
+    function performRoundOver(boom) {
+        const msg = boom ? "灾难爆发，神庙崩塌!" : "本轮结束";
+        showToast(msg, boom ? 'warn' : 'good');
+        log(msg);
+
+        if(gameState.currentStageEffect.id === 'unity' && !gameState.players.some(p => p.status === 'busted')) {
+            log("命运共同体生效: 全员+5分");
+            gameState.players.forEach(p => p.totalScore += 5);
+        }
+
+        updateUI(true); 
+        
+        if(isMultiplayer && !isHost) return;
+        setTimeout(startRound, 2500);
+    }
+
+    function endGame() {
+        let html = `<h2 style="color:var(--accent-gold); font-size:24px;">最终战报</h2><table style="margin:20px auto;width:90%;"><tr><th>名次</th><th>探险家</th><th>分数</th></tr>`;
+        [...gameState.players].sort((a,b)=>b.totalScore-a.totalScore).forEach((p,i) => {
+            html += `<tr>
+                <td>${i+1}</td>
+                <td style="display:flex;align-items:center;justify-content:center;gap:10px;${p.isHuman?'color:gold':''}">
+                    <div class="avatar p${p.id}" style="width:36px;height:36px;margin:0;border-width:2px;box-shadow:none;"></div>
+                    <span>${p.getName()}</span>
+                </td>
+                <td>${p.totalScore}</td>
+            </tr>`;
+        });
+        html += `</table>
+        <div style="display:flex;justify-content:center;margin-top:20px;">
+            <button class="btn btn-draw" onclick="location.reload()" style="width:200px;font-size:18px;">再来一局</button>
+        </div>`;
+        const ov = document.getElementById('overlay');
+        ov.innerHTML = html;
+        ov.classList.remove('hidden');
+    }
+
+    /* --- UI & Animation (修复重点) --- */
+    
+    // 修复后的发牌动画：确保 Transition 正确触发
+    async function flyCard(p, card) {
+        return new Promise(res => {
+            const el = document.createElement('div');
+            const isSecret = !p.isHuman;
+            el.className = `fly-card ${isSecret?'back':''} ${card.type==='trap'?'trap':''}`;
+            
+            if(!isSecret) {
+                let name = "宝藏"; let desc = "点数"; let val = card.value;
+                if(card.type === 'trap') {
+                    const info = CONFIG.traps[card.code];
+                    name = info.name; desc = info.desc; val = "☠️";
+                }
+                if(card.type === 'blessing') { name="祝福"; val="A"; }
+                el.innerHTML = `<div style="font-size:40px;font-weight:bold;margin-bottom:10px">${val}</div>
+                                <div style="font-size:16px;font-weight:bold">${name}</div>
+                                <div style="font-size:12px">${desc}</div>`;
+            }
+            
+            document.body.appendChild(el);
+            
+            // 1. 设置起始位置 (牌堆)
+            const deckR = document.getElementById('center-deck').getBoundingClientRect();
+            const startX = deckR.left + 5;
+            const startY = deckR.top + 5;
+            
+            el.style.left = startX + 'px';
+            el.style.top = startY + 'px';
+            el.style.opacity = '0';
+            el.style.transform = 'scale(0.2)';
+
+            // 2. 强制浏览器重绘 (Reflow) - 关键步骤，确保上面的 CSS 应用后再执行 Transition
+            void el.offsetWidth;
+
+            // 3. 计算终点
+            const pDiv = document.querySelector(`.p${p.id}`);
+            const pR = pDiv ? pDiv.getBoundingClientRect() : {top:300,left:100};
+            
+            // 4. 设置结束状态 (触发 CSS Transition)
+            requestAnimationFrame(() => {
+                el.style.opacity = '1';
+                el.style.transform = 'scale(1)'; // 飞的过程中变大，增加视觉冲击
+                el.style.left = (pR.left + 10) + 'px';
+                el.style.top = (pR.top + 20) + 'px';
+            });
+
+            // 5. 动画结束后清理
+            setTimeout(() => {
+                el.style.opacity = '0';
+                setTimeout(() => { el.remove(); res(); }, 200);
+            }, 600); // 必须与 CSS transition 时间匹配
+        });
+    }
+
+    function updateTrapMonitor() {
+        const mon = document.getElementById('stage-monitor');
+        const count = gameState.stageTraps;
+        const effect = gameState.currentStageEffect;
+
+        document.getElementById('stage-title').innerText = effect ? effect.name : '...';
+        document.getElementById('stage-desc').innerText = effect ? effect.desc : '...';
+
+        const statusEl = document.getElementById('monitor-status');
+        const segs = [document.getElementById('seg-1'), document.getElementById('seg-2'), document.getElementById('seg-3')];
+        
+        segs.forEach(s => s.className = 'trap-seg'); 
+
+        if(count === 0) {
+            statusEl.innerText = "安全";
+            statusEl.style.color = "var(--accent-green)";
+        } else if (count === 1) {
+            statusEl.innerText = "警惕";
+            statusEl.style.color = "var(--accent-orange)";
+            segs[0].classList.add('active', 'lvl1');
+        } else if (count === 2) {
+            statusEl.innerText = "极危";
+            statusEl.style.color = "var(--accent-red)";
+            segs[0].classList.add('active', 'lvl1');
+            segs[1].classList.add('active', 'lvl2');
+        } else {
+            statusEl.innerText = "崩塌";
+            segs.forEach(s => s.classList.add('active', 'lvl3'));
+        }
+    }
+
+    function updateUI(reveal = false) {
+        document.getElementById('round-num').innerText = gameState.round;
+        const container = document.getElementById('players-container');
+        container.innerHTML = '';
+
+        gameState.players.forEach(p => {
+            const div = document.createElement('div');
+            div.className = 'player-unit';
+            let stCls = 'active';
+            if(p.status === 'busted') stCls = 'busted';
+            if(p.status === 'retreated') stCls = 'retreated';
+            
+            let score = p.currentScore;
+            if(!p.isHuman && p.status === 'active' && !reveal) score = "?";
+            if(p.status === 'busted') score = "☠️";
+
+            let icon = '';
+            if(p.status === 'retreat_intent') icon = '🤔';
+            if(p.status === 'retreated') icon = '✅';
+
+            let tags = '';
+            if(p.effects.multiplier > 1) tags += `<span class="tag trap" onclick="showTip(event,'下张牌点数翻倍')">塌方</span>`;
+            if(p.effects.curseVal > 0) tags += `<span class="tag trap" onclick="showTip(event,'撤退时点数+2')">诅咒</span>`;
+            if(p.effects.forcedDraws > 0) tags += `<span class="tag trap" onclick="showTip(event,'必须再抽一张')">迷失</span>`;
+            if(p.status === 'active') tags += `<span class="tag info" onclick="showTip(event,'正在探索中')">探索</span>`;
+
+            div.innerHTML = `
+                <div class="status-panel ${stCls}">
+                    <div class="status-icon">${icon}</div>
+                    <div class="p-name">${p.getName()}</div>
+                    <div class="p-score">${score}</div>
+                    <div class="p-tags">${tags}</div>
+                    <div style="font-size:11px;color:#888;">总分:${p.totalScore}</div>
+                </div>
+                <div class="avatar p${p.id}"></div>
+                <div class="hand-area" id="hand-${p.id}"></div>
+            `;
+            container.appendChild(div);
+            renderCards(p, reveal);
+        });
+
+        const h = gameState.players[myPIndex-1];
+        if(h) {
+            const canRetreat = h.status === 'active' && h.effects.forcedDraws === 0;
+            // Only touch buttons if we are not in processing mode (to avoid overriding setControls(false))
+            if(!gameState.isProcessing) {
+                 document.getElementById('btn-retreat').disabled = !canRetreat;
+                 if(h.status !== 'active') document.getElementById('btn-draw').disabled = true;
+            }
+        }
+    }
+
+    function renderCards(p, reveal=false) {
+        const area = document.getElementById(`hand-${p.id}`);
+        if(!area) return;
+        area.innerHTML = '';
+        
+        p.hand.forEach((c, i) => {
+            const el = document.createElement('div');
+            const isSecret = !p.isHuman && !reveal;
+            el.className = `mini-card ${isSecret?'back':''} ${c.type==='trap'?'trap':''}`;
+            el.style.left = `calc(50% + ${(i - (p.hand.length-1)/2)*15}px)`; 
+            el.style.zIndex = i;
+            
+            let txt = c.value;
+            let tip = `宝藏: ${c.value}点`;
+
+            if(c.type === 'trap') {
+                txt = "☠️";
+                const tInfo = CONFIG.traps[c.code];
+                tip = `【${tInfo.name}】${tInfo.desc}`;
+            }
+            if(c.type === 'blessing') {
+                txt = "A";
+                tip = "【神庙祝福】算作11点或1点";
+            }
+            
+            if(isSecret) tip = "未知手牌";
+
+            // Add Click for Tooltip
+            el.onclick = (e) => showTip(e, tip);
+            el.style.cursor = 'pointer';
+            
+            if(!isSecret) el.innerText = txt;
+            area.appendChild(el);
+        });
+    }
+
+    /* --- Multiplayer Helpers --- */
+    let roundDecisions = {};
+
+    function broadcast(type, data) {
+        if(socket) socket.emit('game_event', { roomId: myRoomId, type, data });
+    }
+
+    async function handleGameEvent(evt) {
+        if(evt.type === 'round_start') {
+            gameState.round = evt.data.round;
+            gameState.currentStageEffect = CONFIG.stageEffects[evt.data.effectIdx];
+            gameState.players.forEach(p => p.resetRound());
+            gameState.stageTraps = 0;
+            performRoundStart();
+        }
+        if(evt.type === 'deal_card') {
+            const p = gameState.players.find(pl => pl.id === evt.data.pIndex);
+            await flyCard(p, evt.data.card);
+            applyCard(p, evt.data.card);
+            renderCards(p);
+            updateUI();
+            if(p.status === 'busted') {
+                showToast(`${p.getName()} 爆仓!`, 'warn');
+                await wait(600);
+            }
+        }
+        if(evt.type === 'ask_decision') {
+            const me = gameState.players[myPIndex-1];
+            if(me.status === 'active') {
+                setControls(true);
+                showToast("请决策...", "info");
+            } else {
+                showToast("等待其他玩家...", "info");
+            }
+        }
+        if(evt.type === 'turn_resolved') {
+            applyTurnResolution(evt.data);
+        }
+        if(evt.type === 'round_over') {
+             performRoundOver(evt.data.boom);
+        }
+    }
+
+    function handleRemoteDecision(pIndex, choice) {
+        roundDecisions[pIndex] = choice;
+        checkAllDecisions();
+    }
+
+    function checkAllDecisions() {
+        const activeHumans = gameState.players.filter(p => p.status === 'active' && p.isHuman);
+        const allDecided = activeHumans.every(p => roundDecisions[p.id] !== undefined);
+        
+        if(allDecided) {
+            // All humans decided. Apply to state.
+            activeHumans.forEach(p => {
+                const choice = roundDecisions[p.id];
+                if(!choice) {
+                    p.status = 'retreat_intent';
+                    log(`${p.getName()} 选择撤退`);
+                } else {
+                    log(`${p.getName()} 选择继续`);
+                }
+            });
+            roundDecisions = {}; // Reset
+            resolveTurn();
+        }
+    }
+
+    /* --- Utils --- */
+    function setControls(en) {
+        document.getElementById('btn-draw').disabled = !en;
+        document.getElementById('btn-retreat').disabled = !en;
+    }
+    function showToast(msg, type='info') {
+        const el = document.createElement('div');
+        el.className = 'toast'; el.innerText = msg;
+        if(type==='warn') el.style.background = 'rgba(200,50,50,0.95)';
+        if(type==='good') el.style.background = 'rgba(50,150,50,0.95)';
+        document.getElementById('toast-container').appendChild(el);
+        setTimeout(()=>el.remove(), 2100);
+    }
+    function log(msg) {
+        const list = document.getElementById('log-list');
+        const line = document.createElement('div');
+        line.className = 'log-line';
+        const time = new Date().toLocaleTimeString().split(' ')[0];
+        line.innerHTML = `<span class="log-time">[${time}]</span> ${msg}`;
+        list.prepend(line);
+    }
+    window.toggleLog = function() { document.getElementById('log-drawer').classList.toggle('open'); };
+    window.showTip = function(e, txt) {
+        e.stopPropagation();
+        const t = document.getElementById('tooltip');
+        t.innerText = txt; t.style.opacity = 1;
+        t.style.top = (e.clientY - 40) + 'px'; t.style.left = (e.clientX - 60) + 'px';
+        setTimeout(()=>t.style.opacity=0, 2000);
+    };
+    document.addEventListener('click', ()=>document.getElementById('tooltip').style.opacity=0);
+    function wait(ms){return new Promise(r=>setTimeout(r,ms));}
+
+</script>
+</body>
+</html>
