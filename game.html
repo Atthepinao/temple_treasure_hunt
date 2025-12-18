@@ -617,11 +617,13 @@
 
     async function dealRound() {
         if(isMultiplayer && !isHost) return;
+        if(gameState.isDealing) return; // FIX: Prevent multi-draw
 
         if(checkEnd()) return roundOver();
         
         setControls(false);
         gameState.isProcessing = true;
+        gameState.isDealing = true;
         
         const active = gameState.players.filter(p => p.status === 'active');
         
@@ -643,6 +645,8 @@
                 await wait(600);
             }
         }
+        
+        gameState.isDealing = false;
 
         if(checkEnd()) {
             roundOver();
@@ -872,7 +876,11 @@
     async function flyCard(p, card) {
         return new Promise(res => {
             const el = document.createElement('div');
-            const isSecret = !p.isHuman;
+            // FIX: Visibility Logic - Secret if not mine AND not a trap
+            const isMine = p.id === myPIndex;
+            const isTrap = card.type === 'trap';
+            const isSecret = !isMine && !isTrap;
+
             el.className = `fly-card ${isSecret?'back':''} ${card.type==='trap'?'trap':''}`;
             
             if(!isSecret) {
@@ -1012,7 +1020,11 @@
         
         p.hand.forEach((c, i) => {
             const el = document.createElement('div');
-            const isSecret = !p.isHuman && !reveal;
+            // FIX: Visibility Logic
+            const isMine = p.id === myPIndex;
+            const isTrap = c.type === 'trap';
+            const isSecret = !isMine && !isTrap && !reveal;
+
             el.className = `mini-card ${isSecret?'back':''} ${c.type==='trap'?'trap':''}`;
             el.style.left = `calc(50% + ${(i - (p.hand.length-1)/2)*15}px)`; 
             el.style.zIndex = i;
